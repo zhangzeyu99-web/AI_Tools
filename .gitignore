@@ -1,0 +1,39 @@
+# 依赖目录
+node_modules/
+venv/
+__pycache__/
+*.pyc
+
+# 环境文件
+.env
+.env.local
+.env.*.local
+
+# 编辑器配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
+logs/
+
+# 构建输出
+dist/
+build/
+*.zip
+*.tar.gz
+
+# 测试覆盖报告
+coverage/
+.nyc_output/
+
+# 临时文件
+tmp/
+temp/
