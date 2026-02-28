@@ -22,29 +22,70 @@ AI_Tools/
 
 ## 🛠️ 工具清单
 
-### Web 应用工具
+### 📜 脚本工具 (`tools/scripts/`)
+
+| 工具名称 | 描述 | 技术栈 | 状态 |
+|---------|------|--------|------|
+| [LQA Master](tools/scripts/LQA_Master/) | 游戏本地化 LQA 审计工具 | Python + Gemini API | ✅ |
+| [LQA Tool](tools/scripts/LQA_Tool/) | UI 本地化助手（多语言支持） | Python + Gemini API + CV | ✅ |
+| [帮我填写](tools/scripts/帮我填写/) | 工作日报自动填写助手 | Python + OpenAI + Selenium | ✅ |
+
+### 🌐 Web 应用工具
 
 | 工具名称 | 描述 | 链接 | 状态 |
 |---------|------|------|------|
 | *(待添加)* | - | - | 📝 |
 
-### 脚本工具
-
-| 工具名称 | 描述 | 语言 | 状态 |
-|---------|------|------|------|
-| *(待添加)* | - | - | 📝 |
-
-### Chrome 扩展
+### 🔌 Chrome 扩展
 
 | 工具名称 | 描述 | 链接 | 状态 |
 |---------|------|------|------|
 | *(待添加)* | - | - | 📝 |
 
-### CLI 工具
+### 💻 CLI 工具
 
 | 工具名称 | 描述 | 命令 | 状态 |
 |---------|------|------|------|
 | *(待添加)* | - | - | 📝 |
+
+## 🎯 工具详情
+
+### 🎮 LQA Master
+基于 Gemini AI 的游戏本地化质量审计工具，支持 Excel 批量处理和术语一致性检查。
+
+**核心功能：**
+- AI 自动化翻译质量审计
+- 术语表支持
+- 多维度错误检测
+- 友好 GUI 界面
+
+[查看详情 →](tools/scripts/LQA_Master/)
+
+---
+
+### 🌍 UI Localizer (本地化小助手)
+多语言游戏 UI 本地化智能审计工具，支持截图分析和进化学习。
+
+**核心功能：**
+- 9 种语言支持
+- UI 截图分析
+- 进化记忆系统
+- 批量处理能力
+
+[查看详情 →](tools/scripts/LQA_Tool/)
+
+---
+
+### 📝 帮我填写
+自动化填写工作日报的智能工具，基于 AI 生成内容并自动填充。
+
+**核心功能：**
+- AI 智能生成日报
+- 自动网页填充
+- 关键词驱动
+- 历史记录管理
+
+[查看详情 →](tools/scripts/帮我填写/)
 
 ## 🚀 快速开始
 
@@ -55,8 +96,9 @@ AI_Tools/
 git clone https://github.com/zhangzeyu99-web/AI_Tools.git
 cd AI_Tools
 
-# 安装全局依赖（如果有）
-npm install  # 或 pip install -r requirements.txt
+# 进入具体工具目录安装依赖
+cd tools/scripts/LQA_Master
+pip install -r requirements.txt  # 如果有
 ```
 
 ### 使用工具
@@ -64,8 +106,8 @@ npm install  # 或 pip install -r requirements.txt
 每个工具都有独立的 README 说明，进入对应目录查看详细文档：
 
 ```bash
-cd tools/web-tools/xxx
-# 查看 README.md 获取使用说明
+cd tools/scripts/LQA_Master
+python lqa_tool.py
 ```
 
 ## 📖 贡献指南
@@ -85,11 +127,16 @@ cd tools/web-tools/xxx
 - ✅ 示例代码或演示
 - ✅ 依赖清单（`package.json` / `requirements.txt` 等）
 
+详细规范请查看 [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
+
 ## 📝 更新日志
 
 ### 2026-02-28
 - 🎉 仓库初始化
 - 📚 创建基础目录结构和 README
+- 🎮 添加 **LQA Master** - 游戏本地化审计工具
+- 🌍 添加 **UI Localizer** - 多语言本地化助手
+- 📝 添加 **帮我填写** - 工作日报自动助手
 
 ---
 
