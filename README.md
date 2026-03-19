@@ -9,6 +9,7 @@
 | **LQA Master** | 游戏本地化质量审计 | [`lqa_tool.py`](tools/scripts/LQA_Master/lqa_tool.py) |
 | **UI Localizer** | 多语言 UI 视频审计 | [`ui_localizer.py`](tools/scripts/LQA_Tool/ui_localizer.py) |
 | **帮我填写** | 工作日报自动填写 | [`todo_gui.py`](tools/scripts/帮我填写/todo_gui.py) |
+| **Localization QA** | 游戏本地化质检工作流 | [`gui.py`](tools/scripts/Localization_QA/gui.py) |
 
 ---
 
@@ -38,6 +39,11 @@ pip install customtkinter google-generativeai opencv-python pillow
 pip install --upgrade openai google-genai selenium
 ```
 
+**Localization QA:**
+```bash
+pip install pandas openpyxl
+```
+
 ### 3. 获取 API Key
 
 | 工具 | 推荐模型 | 申请地址 |
@@ -45,6 +51,7 @@ pip install --upgrade openai google-genai selenium
 | LQA Master | Gemini | https://aistudio.google.com/app/apikey |
 | UI Localizer | Gemini | https://aistudio.google.com/app/apikey |
 | 帮我填写 | DeepSeek | https://platform.deepseek.com |
+| Localization QA | ChatGPT (网页版) | 无需 API Key |
 
 ### 4. 运行工具
 
@@ -52,6 +59,7 @@ pip install --upgrade openai google-genai selenium
 python lqa_tool.py        # LQA Master
 python ui_localizer.py    # UI Localizer
 python todo_gui.py        # 帮我填写
+python gui.py             # Localization QA（在 Localization_QA 目录下运行）
 ```
 
 ---
@@ -83,4 +91,4 @@ python todo_gui.py        # 帮我填写
 
 ---
 
-*更新时间: 2026-02-28*
+*更新时间: 2026-03-19*
