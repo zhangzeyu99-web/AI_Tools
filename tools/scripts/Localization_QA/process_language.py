@@ -164,13 +164,18 @@ def _run_ui_detection(states: dict[int, RowState]):
         state.ui_confidence = conf
 
 
-def prepare_ai_review(states: dict[int, RowState], batch_size: int = 200):
+def prepare_ai_review(
+    states: dict[int, RowState],
+    batch_size: int = 200,
+    term_lookup: dict[str, str] | None = None,
+    lang: str = 'en',
+):
     """Prepare AI review batches from current states (after machine review)."""
     rows = [
         {'id': s.row_id, 'original': s.original, 'translation': s.fixed_translation}
         for s in states.values()
     ]
-    return prepare_all_batches(rows, batch_size=batch_size)
+    return prepare_all_batches(rows, batch_size=batch_size, term_lookup=term_lookup, lang=lang)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -383,27 +388,48 @@ def write_outputs(
 ) -> dict:
     """Phase 3: Write final output files after all reviews are done.
 
+    Writes to output root (latest, always overwritten) AND to an archive
+    subfolder named {lang}_{timestamp} for history.
+
     Returns a summary dict.
     """
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    result_path = out / f"result_{lang}.xlsx"
+    # Clean old result/report files from root before writing new ones
+    for old_file in out.glob('result_*.xlsx'):
+        old_file.unlink()
+    for old_file in out.glob('report_*.xlsx'):
+        old_file.unlink()
+
+    # Archive subfolder: output/{source}_{lang}_{timestamp}/
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    source_name = Path(input_path).stem
+    archive_dir = out / f"{source_name}_{lang}_{timestamp}"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
     full_df = _build_result_full(df, col_map, states, lang_index)
     review_df = _build_result_review(states)
-
-    with pd.ExcelWriter(result_path, engine='openpyxl') as writer:
-        full_df.to_excel(writer, sheet_name='完整结果', index=False)
-        review_df.to_excel(writer, sheet_name='需确认', index=False)
-    print(f"\n  -> {result_path}  (完整结果 + 需确认 {len(review_df)} 条)")
-
-    report_path = out / f"report_{lang}.xlsx"
     report_sheets = _build_report_sheets(states, groups, input_path, lang)
 
-    with pd.ExcelWriter(report_path, engine='openpyxl') as writer:
-        for sheet_name, sheet_df in report_sheets.items():
-            sheet_df.to_excel(writer, sheet_name=sheet_name, index=False)
+    # Write to both locations
+    for target_dir, label in [(out, "最新"), (archive_dir, "归档")]:
+        result_path = target_dir / f"result_{lang}.xlsx"
+        with pd.ExcelWriter(result_path, engine='openpyxl') as writer:
+            full_df.to_excel(writer, sheet_name='完整结果', index=False)
+            review_df.to_excel(writer, sheet_name='需确认', index=False)
+
+        report_path = target_dir / f"report_{lang}.xlsx"
+        with pd.ExcelWriter(report_path, engine='openpyxl') as writer:
+            for sheet_name, sheet_df in report_sheets.items():
+                sheet_df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+    result_path = out / f"result_{lang}.xlsx"
+    report_path = out / f"report_{lang}.xlsx"
+
+    print(f"\n  -> {result_path}  (完整结果 + 需确认 {len(review_df)} 条)")
     print(f"  -> {report_path}  (4 sheets)")
+    print(f"  -> {archive_dir}/  (归档)")
 
     summary = {
         'total_processed': len(states),
@@ -414,6 +440,7 @@ def write_outputs(
         'total_issues': sum(len(s.issues) for s in states.values()),
         'result_path': str(result_path),
         'report_path': str(report_path),
+        'archive_dir': str(archive_dir),
     }
 
     print(f"\n{'='*50}")

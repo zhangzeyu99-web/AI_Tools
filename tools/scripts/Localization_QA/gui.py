@@ -75,6 +75,7 @@ class App(tk.Tk):
         self._col_map = None
         self._states = None
         self._groups = None
+        self._term_lookup = None
         self._input_path = ''
         self._batches: list[BatchInfo] = []
         self._current_batch = 0
@@ -122,7 +123,12 @@ class App(tk.Tk):
         tk.Label(opts, text="语言:", font=FT, bg=CARD, fg=TXT).pack(side="left")
         self.lang_var = tk.StringVar(value="en")
         ttk.Combobox(opts, textvariable=self.lang_var, width=6, state="readonly",
-                     values=["en", "fr", "de", "tr", "es", "pt", "ru"]).pack(side="left", padx=(4, 0))
+                     values=["en", "idn", "fr", "de", "tr", "es", "pt", "ru"]).pack(side="left", padx=(4, 0))
+        tk.Label(opts, text="AI批次:", font=FT, bg=CARD, fg=TXT).pack(side="left", padx=(16, 0))
+        self.batch_var = tk.StringVar(value="500")
+        ttk.Combobox(opts, textvariable=self.batch_var, width=6, state="readonly",
+                     values=["200", "500", "1000"]).pack(side="left", padx=(4, 0))
+        tk.Label(opts, text="行/批", font=FT_S, bg=CARD, fg=TXT2).pack(side="left", padx=(2, 0))
 
         self.btn_p1 = tk.Button(p1, text="▶  开始机审", font=("Microsoft YaHei UI", 11, "bold"),
                                 bg=ACCENT, fg="white", activebackground=ACCENT2, activeforeground="white",
@@ -247,15 +253,17 @@ class App(tk.Tk):
                 df, col_map, states, groups = run_machine_review(
                     lp, tp, self.auto_fix_var.get(),
                 )
+                from process_language import _load_term_base
+                term_lookup = _load_term_base(tp)
                 sys.stdout = old
-                self.after(0, lambda: self._on_phase1_done(True, df, col_map, states, groups, buf.getvalue()))
+                self.after(0, lambda: self._on_phase1_done(True, df, col_map, states, groups, buf.getvalue(), term_lookup=term_lookup))
             except Exception as e:
                 sys.stdout = sys.__stdout__
                 self.after(0, lambda: self._on_phase1_done(False, error=str(e)))
 
         threading.Thread(target=task, daemon=True).start()
 
-    def _on_phase1_done(self, ok, df=None, col_map=None, states=None, groups=None, captured="", error=""):
+    def _on_phase1_done(self, ok, df=None, col_map=None, states=None, groups=None, captured="", error="", term_lookup=None):
         self.btn_p1.configure(state="normal", text="▶  开始机审")
         if not ok:
             self._log(f"错误: {error}")
@@ -264,6 +272,7 @@ class App(tk.Tk):
 
         try:
             self._df, self._col_map, self._states, self._groups = df, col_map, states, groups
+            self._term_lookup = term_lookup
             for line in captured.strip().split("\n"):
                 self._log("  " + line)
 
@@ -274,7 +283,8 @@ class App(tk.Tk):
             self.p1_result.pack(fill="x", pady=(4, 0))
 
             # Prepare AI batches
-            self._batches = prepare_ai_review(states, batch_size=200)
+            batch_size = int(self.batch_var.get())
+            self._batches = prepare_ai_review(states, batch_size=batch_size, term_lookup=self._term_lookup, lang=self.lang_var.get())
             self._current_batch = 0
             self._ai_corrections_total = 0
 

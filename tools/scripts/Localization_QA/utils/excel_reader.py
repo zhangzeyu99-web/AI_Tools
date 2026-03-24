@@ -11,7 +11,7 @@ import pandas as pd
 
 
 # Common column name patterns (Chinese / English)
-_ID_PATTERNS = re.compile(r'^(id|ID|序号|编号)$', re.IGNORECASE)
+_ID_PATTERNS = re.compile(r'^[Ii][Dd]$|^序号$|^编号$|ID$')
 _ORIG_PATTERNS = re.compile(r'^(原文|中文|中文原文|source|original)$', re.IGNORECASE)
 _TRANS_PATTERNS = re.compile(r'^(译文|翻译|translation|target)$', re.IGNORECASE)
 _NOTE_PATTERNS = re.compile(r'^(备注|note|notes|comment)$', re.IGNORECASE)
@@ -20,13 +20,13 @@ _NOTE_PATTERNS = re.compile(r'^(备注|note|notes|comment)$', re.IGNORECASE)
 def _detect_column_role(col_name: str) -> Optional[str]:
     """Detect column role from its name."""
     name = str(col_name).strip()
-    if _ID_PATTERNS.match(name):
+    if _ID_PATTERNS.search(name):
         return 'id'
-    if _ORIG_PATTERNS.match(name):
+    if _ORIG_PATTERNS.search(name):
         return 'original'
-    if _TRANS_PATTERNS.match(name):
+    if _TRANS_PATTERNS.search(name):
         return 'translation'
-    if _NOTE_PATTERNS.match(name):
+    if _NOTE_PATTERNS.search(name):
         return 'note'
     return None
 
