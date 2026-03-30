@@ -130,6 +130,34 @@ class App(tk.Tk):
                      values=["200", "500", "1000"]).pack(side="left", padx=(4, 0))
         tk.Label(opts, text="行/批", font=FT_S, bg=CARD, fg=TXT2).pack(side="left", padx=(2, 0))
 
+        scope_row = tk.Frame(p1, bg=CARD)
+        scope_row.pack(fill="x", pady=(6, 0))
+        tk.Label(scope_row, text="AI审查范围:", font=FT, bg=CARD, fg=TXT,
+                 width=16, anchor="e").pack(side="left", padx=(0, 6))
+        self.ai_scope_var = tk.StringVar(value="all")
+        tk.Radiobutton(
+            scope_row, text="全量审查（当前默认）", variable=self.ai_scope_var, value="all",
+            font=FT, bg=CARD, activebackground=CARD
+        ).pack(side="left", padx=(0, 12))
+        tk.Radiobutton(
+            scope_row, text="仅审查机审命中的问题行", variable=self.ai_scope_var, value="issues_only",
+            font=FT, bg=CARD, activebackground=CARD
+        ).pack(side="left")
+
+        term_filter_row = tk.Frame(p1, bg=CARD)
+        term_filter_row.pack(fill="x", pady=(6, 0))
+        tk.Label(term_filter_row, text="术语筛选输出:", font=FT, bg=CARD, fg=TXT,
+                 width=16, anchor="e").pack(side="left", padx=(0, 6))
+        self.term_only_view_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            term_filter_row,
+            text="生成“术语行筛选”sheet（按原文命中术语）",
+            variable=self.term_only_view_var,
+            font=FT,
+            bg=CARD,
+            activebackground=CARD,
+        ).pack(side="left")
+
         self.btn_p1 = tk.Button(p1, text="▶  开始机审", font=("Microsoft YaHei UI", 11, "bold"),
                                 bg=ACCENT, fg="white", activebackground=ACCENT2, activeforeground="white",
                                 relief="flat", cursor="hand2", padx=24, pady=4, command=self._run_phase1)
@@ -259,7 +287,8 @@ class App(tk.Tk):
                 self.after(0, lambda: self._on_phase1_done(True, df, col_map, states, groups, buf.getvalue(), term_lookup=term_lookup))
             except Exception as e:
                 sys.stdout = sys.__stdout__
-                self.after(0, lambda: self._on_phase1_done(False, error=str(e)))
+                err_msg = str(e)
+                self.after(0, lambda msg=err_msg: self._on_phase1_done(False, error=msg))
 
         threading.Thread(target=task, daemon=True).start()
 
@@ -284,7 +313,14 @@ class App(tk.Tk):
 
             # Prepare AI batches
             batch_size = int(self.batch_var.get())
-            self._batches = prepare_ai_review(states, batch_size=batch_size, term_lookup=self._term_lookup, lang=self.lang_var.get())
+            ai_scope = self.ai_scope_var.get()
+            self._batches = prepare_ai_review(
+                states,
+                batch_size=batch_size,
+                term_lookup=self._term_lookup,
+                lang=self.lang_var.get(),
+                scope=ai_scope,
+            )
             self._current_batch = 0
             self._ai_corrections_total = 0
 
@@ -292,7 +328,11 @@ class App(tk.Tk):
             self._update_p2_display()
             self.p2_frame.grid(row=1, column=0, padx=12, pady=(6, 3), sticky="ew")
             self._body.update_idletasks()
-            self._log(f"\n机审完成。AI审查已准备: {len(self._batches)} 个批次，每批约200行")
+            scope_text = "全量审查" if ai_scope == "all" else "仅机审问题行"
+            self._log(f"\n机审完成。AI审查范围: {scope_text}")
+            if self.term_only_view_var.get():
+                self._log("术语筛选输出: 已启用（将生成“术语行筛选”sheet）")
+            self._log(f"AI审查已准备: {len(self._batches)} 个批次，每批约{batch_size}行")
             self._log("请按顺序操作：复制提示词 → 粘贴到ChatGPT → 复制回复 → 粘贴AI结果")
         except Exception as e:
             self._log(f"错误: {e}")
@@ -402,6 +442,8 @@ class App(tk.Tk):
             summary = write_outputs(
                 self._df, self._col_map, self._states, self._groups,
                 self._input_path, self.lang_var.get(), output_dir,
+                term_lookup=self._term_lookup,
+                term_only_view=self.term_only_view_var.get(),
             )
             sys.stdout = old
             for line in buf.getvalue().strip().split("\n"):

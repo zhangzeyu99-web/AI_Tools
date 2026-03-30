@@ -23,6 +23,7 @@ class TermCheckResult:
 
 def _normalize_for_search(text: str) -> str:
     """Normalize text for case-insensitive term searching."""
+    text = str(text)
     t = re.sub(r'\[/?color[^\]]*\]', '', text)
     t = re.sub(r'\{[^}]+\}', '', t)
     return t.strip()
@@ -39,6 +40,44 @@ def _find_term_in_text(term: str, text: str) -> tuple[bool, str]:
     if match:
         return True, match.group()
     return False, ''
+
+
+def _normalize_term_entry(term_value) -> tuple[str, list[str], bool]:
+    """Normalize term entry to (primary, accepted_terms, enforce_case)."""
+    if isinstance(term_value, str):
+        t = term_value.strip()
+        return t, [t] if t else [], False
+
+    if isinstance(term_value, list):
+        terms = [str(x).strip() for x in term_value if str(x).strip()]
+        if not terms:
+            return '', [], False
+        return terms[0], terms, False
+
+    if isinstance(term_value, dict):
+        primary = str(term_value.get('primary', '')).strip()
+        variants = term_value.get('variants', [])
+        if isinstance(variants, str):
+            variants = [variants]
+        variants = [str(x).strip() for x in variants if str(x).strip()]
+        enforce_case = bool(term_value.get('enforce_case', False))
+
+        accepted = []
+        seen = set()
+        for t in [primary] + variants:
+            if not t:
+                continue
+            k = t.lower()
+            if k in seen:
+                continue
+            seen.add(k)
+            accepted.append(t)
+
+        if not primary and accepted:
+            primary = accepted[0]
+        return primary, accepted, enforce_case
+
+    return '', [], False
 
 
 def _check_capitalization(
@@ -116,7 +155,7 @@ def check_term_hit(
     row_id: int,
     original: str,
     translation: str,
-    term_lookup: dict[str, str],
+    term_lookup: dict,
 ) -> list[TermCheckResult]:
     """Check if standard terms appear in the translation.
 
@@ -128,16 +167,27 @@ def check_term_hit(
     """
     results = []
 
-    for cn_term, en_term in term_lookup.items():
+    for cn_term, term_entry in term_lookup.items():
         if cn_term not in original:
             continue
 
+        primary_term, accepted_terms, enforce_case = _normalize_term_entry(term_entry)
+        if not accepted_terms:
+            continue
+
         # Layer 1: term hit detection
-        found, actual_match = _find_term_in_text(en_term, translation)
+        found = False
+        matched_expected = ''
+        for expected in accepted_terms:
+            hit, _ = _find_term_in_text(expected, translation)
+            if hit:
+                found = True
+                matched_expected = expected
+                break
 
         if not found:
             # Check for partial matches or common variants
-            en_words = en_term.split()
+            en_words = primary_term.split()
             if len(en_words) > 1:
                 # Multi-word term: check if any words appear
                 hits = sum(1 for w in en_words if w.lower() in translation.lower())
@@ -146,10 +196,10 @@ def check_term_hit(
                         row_id=row_id,
                         check_type='term_partial_hit',
                         severity='warning',
-                        message=f"Partial term match: expected '{en_term}' for '{cn_term}', "
+                        message=f"Partial term match: expected one of {accepted_terms} for '{cn_term}', "
                                 f"found {hits}/{len(en_words)} words",
                         source_term=cn_term,
-                        expected_target=en_term,
+                        expected_target=primary_term,
                         confidence=0.6,
                     ))
                 else:
@@ -157,9 +207,9 @@ def check_term_hit(
                         row_id=row_id,
                         check_type='term_missing',
                         severity='error',
-                        message=f"Term not found: expected '{en_term}' for '{cn_term}'",
+                        message=f"Term not found: expected one of {accepted_terms} for '{cn_term}'",
                         source_term=cn_term,
-                        expected_target=en_term,
+                        expected_target=primary_term,
                         confidence=0.8,
                     ))
             else:
@@ -167,15 +217,16 @@ def check_term_hit(
                     row_id=row_id,
                     check_type='term_missing',
                     severity='error',
-                    message=f"Term not found: expected '{en_term}' for '{cn_term}'",
+                    message=f"Term not found: expected one of {accepted_terms} for '{cn_term}'",
                     source_term=cn_term,
-                    expected_target=en_term,
+                    expected_target=primary_term,
                     confidence=0.8,
                 ))
         else:
-            # Layer 2: grammar check on the matched term
-            cap_results = _check_capitalization(en_term, translation, row_id, cn_term)
-            results.extend(cap_results)
+            # Optional Layer 2: capitalization checks (default disabled)
+            if enforce_case and matched_expected:
+                cap_results = _check_capitalization(matched_expected, translation, row_id, cn_term)
+                results.extend(cap_results)
 
     return results
 
@@ -186,6 +237,7 @@ def check_chinese_residue(
 ) -> list[TermCheckResult]:
     """Check for residual Chinese characters in translation."""
     results = []
+    translation = str(translation)
     cn_chars = re.findall(r'[\u4e00-\u9fa5]+', translation)
     if cn_chars:
         results.append(TermCheckResult(

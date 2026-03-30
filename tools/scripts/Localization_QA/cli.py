@@ -244,6 +244,8 @@ def agent_prepare(args):
     summary = write_outputs(
         df, col_map, states, groups,
         args.input, args.lang, args.output_dir, args.lang_index,
+        term_lookup=term_lookup,
+        term_only_view=args.term_only_view,
     )
 
     _section("prepare 完成")
@@ -285,9 +287,12 @@ def agent_merge(args):
         print(f"\n  AI审查合计: {total_corrections} 处修正")
 
     _header("生成最终输出")
+    term_lookup = _load_term_base(args.term_base)
     summary = write_outputs(
         df, col_map, states, groups,
         args.input, args.lang, args.output_dir, args.lang_index,
+        term_lookup=term_lookup,
+        term_only_view=args.term_only_view,
     )
 
     _section("merge 完成")
@@ -329,6 +334,7 @@ def main():
     parser.add_argument('--skip-ai', action='store_true', help='跳过AI审查，仅运行机审')
     parser.add_argument('--agent', choices=['prepare', 'merge'], default=None,
                         help='Agent 非交互模式: prepare=机审+生成提示词, merge=合并AI结果')
+    parser.add_argument('--term-only-view', action='store_true', help='在结果文件新增“术语行筛选”sheet')
 
     args = parser.parse_args()
 
@@ -356,9 +362,12 @@ def main():
         print("\n  (已跳过AI审查)")
 
     _header("生成输出文件")
+    term_lookup = _load_term_base(args.term_base)
     summary = write_outputs(
         df, col_map, states, groups,
         args.input, args.lang, args.output_dir, args.lang_index,
+        term_lookup=term_lookup,
+        term_only_view=args.term_only_view,
     )
 
     _section("最终汇总")
