@@ -42,13 +42,15 @@ def _make_prompt_header(lang: str = 'en') -> str:
     )
 
 
-def _make_term_section(lang: str = 'en') -> str:
+def _make_term_section(lang: str = 'en', has_constraints: bool = False) -> str:
     lang_name = LANG_NAMES.get(lang, lang)
+    header_cols = "中文 | 主译法 | 可接受变体 | 约束" if has_constraints else "中文 | 主译法 | 可接受变体"
     return (
         f"---以下是本批涉及的术语表（中文 → {lang_name}）---\n"
         f"- 命中主译法或可接受变体都算正确\n"
-        f"- 此批次术语默认大小写不强制\n\n"
-        f"中文 | 主译法 | 可接受变体\n"
+        f"- 此批次术语默认大小写不强制\n"
+        + ("- 有约束的术语必须按词性语境选择译法，不得使用未列出的第三种译法\n" if has_constraints else "")
+        + f"\n{header_cols}\n"
         "{{term_lines}}\n\n"
     )
 
@@ -82,21 +84,57 @@ def split_into_batches(
     return [rows[i:i + batch_size] for i in range(0, len(rows), batch_size)]
 
 
+def _make_constraint_section(
+    batch_rows: list[dict],
+    term_lookup: dict | None,
+) -> str:
+    """Build hard-constraint block for terms with noun/verb lock rules."""
+    if not term_lookup:
+        return ''
+
+    combined_originals = ' '.join(str(r['original']) for r in batch_rows)
+    lines = []
+    for cn, term_item in term_lookup.items():
+        if not isinstance(term_item, dict):
+            continue
+        constraint = str(term_item.get('constraint', '')).strip()
+        if not constraint or constraint.lower() == 'nan':
+            continue
+        if cn not in combined_originals:
+            continue
+        primary = str(term_item.get('primary', '')).strip()
+        variants = term_item.get('variants', [])
+        if isinstance(variants, str):
+            variants = [variants]
+        verb = ' / '.join([str(x).strip() for x in variants if str(x).strip()]) or '-'
+        lines.append(f"{cn} | {primary} | {verb} | {constraint}")
+
+    if not lines:
+        return ''
+
+    return (
+        "---以下术语有词性硬约束，必须严格遵守---\n"
+        "规则：必须按语境选择词性对应译法；不得使用未列出的第三种译法。\n\n"
+        "中文术语 | 名词译法 | 动词译法 | 约束\n"
+        + '\n'.join(lines)
+        + "\n\n"
+    )
+
+
 def _extract_relevant_terms(
     batch_rows: list[dict],
     term_lookup: dict | None,
     max_terms: int = 120,
-) -> list[tuple[str, str, str]]:
+) -> list[tuple[str, str, str, str]]:
     """Find terms from the lookup that appear in this batch's source texts.
 
-    Terms are ranked by hit count in this batch and truncated to max_terms
-    to keep prompt size under control.
+    Returns list of (cn, primary, variant_text, constraint).
     """
     if not term_lookup:
         return []
 
     combined_originals = ' '.join(str(r['original']) for r in batch_rows)
-    hits: list[tuple[str, str, str, int]] = []
+    hits: list[tuple[str, str, str, str, int]] = []
     for cn, term_item in term_lookup.items():
         if isinstance(term_item, dict):
             primary = str(term_item.get('primary', '')).strip()
@@ -105,17 +143,20 @@ def _extract_relevant_terms(
                 variants = [variants]
             variants = [str(x).strip() for x in variants if str(x).strip()]
             variant_text = ' / '.join(variants) if variants else '-'
+            constraint = str(term_item.get('constraint', '')).strip()
+            if constraint.lower() == 'nan':
+                constraint = ''
         else:
             primary = str(term_item).strip()
             variant_text = '-'
+            constraint = ''
         count = combined_originals.count(cn)
         if count > 0:
-            hits.append((cn, primary, variant_text, count))
+            hits.append((cn, primary, variant_text, constraint, count))
 
-    # More frequent terms first, then longer source terms
-    hits.sort(key=lambda x: (-x[3], -len(x[0])))
+    hits.sort(key=lambda x: (-x[4], -len(x[0])))
     top_hits = hits[:max_terms]
-    return [(cn, p, v) for cn, p, v, _ in top_hits]
+    return [(cn, p, v, c) for cn, p, v, c, _ in top_hits]
 
 
 def _make_term_error_priority_section(batch_rows: list[dict]) -> str:
@@ -156,25 +197,47 @@ def format_batch_prompt(
         batch_rows, term_lookup, max_terms=max_terms
     )
     if relevant_terms:
-        term_lines = '\n'.join(f"{cn} | {primary} | {variants}" for cn, primary, variants in relevant_terms)
-        prompt += _make_term_section(lang).replace('{{term_lines}}', term_lines)
+        has_any_constraint = any(c for _, _, _, c in relevant_terms)
+        term_lines_parts = []
+        for cn, primary, variants, constraint in relevant_terms:
+            if constraint:
+                term_lines_parts.append(f"{cn} | {primary} | {variants} | {constraint}")
+            elif has_any_constraint:
+                term_lines_parts.append(f"{cn} | {primary} | {variants} |")
+            else:
+                term_lines_parts.append(f"{cn} | {primary} | {variants}")
+        term_lines = '\n'.join(term_lines_parts)
+        prompt += _make_term_section(lang, has_constraints=has_any_constraint).replace('{{term_lines}}', term_lines)
 
-    prompt += _make_term_error_priority_section(batch_rows)
+    has_term_priority = any('term_status' in r for r in batch_rows)
+    if has_term_priority:
+        prompt += _make_term_error_priority_section(batch_rows)
 
     lines = []
+    has_ui_meta = any('is_ui' in r for r in batch_rows)
     for r in batch_rows:
         rid = r['id']
         orig = str(r['original']).replace('\n', '\\n')
         trans = str(r['translation']).replace('\n', '\\n')
-        ui_flag = '是' if r.get('is_ui') else '否'
-        lines.append(f"{rid} | {orig} | {trans} | UI:{ui_flag}")
+        if has_ui_meta:
+            ui_flag = '是' if r.get('is_ui') else '否'
+            lines.append(f"{rid} | {orig} | {trans} | UI:{ui_flag}")
+        else:
+            lines.append(f"{rid} | {orig} | {trans}")
 
     rows_text = '\n'.join(lines)
-    prompt += (
-        f"---以下是待审查内容（第{batch_num}批，共{total_batches}批）---\n\n"
-        + "ID | 原文 | 译文 | 是否UI\n"
-        + rows_text
-    )
+    if has_ui_meta:
+        prompt += (
+            f"---以下是待审查内容（第{batch_num}批，共{total_batches}批）---\n\n"
+            + "ID | 原文 | 译文 | 是否UI\n"
+            + rows_text
+        )
+    else:
+        prompt += (
+            f"---以下是待审查内容（第{batch_num}批，共{total_batches}批）---\n\n"
+            + "ID | 原文 | 译文\n"
+            + rows_text
+        )
     return prompt
 
 

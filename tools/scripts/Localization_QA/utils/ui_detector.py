@@ -47,6 +47,8 @@ def is_ui_text_auto(
     Returns:
         (is_ui, confidence) where confidence is 0.0-1.0
     """
+    original = str(original)
+    translation = str(translation)
     score = 0.0
 
     # Length-based signals

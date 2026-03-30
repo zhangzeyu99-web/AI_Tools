@@ -96,10 +96,16 @@ def _normalize_term_lookup(data: dict) -> dict[str, dict]:
             if not primary:
                 primary = dedup_variants[0]
                 dedup_variants = dedup_variants[1:]
+            constraint = ''
+            if isinstance(value, dict):
+                constraint = str(value.get('constraint', '')).strip()
+                if constraint.lower() == 'nan':
+                    constraint = ''
             normalized[cn] = {
                 'primary': primary,
                 'variants': dedup_variants,
                 'enforce_case': enforce_case,
+                'constraint': constraint,
             }
     return normalized
 
@@ -128,8 +134,9 @@ def _load_term_base(path: str | None) -> dict[str, dict]:
             return None
 
         cn_col = _pick([r'中文术语', r'原文', r'中文', r'source', r'original'])
-        en_col = _pick([r'英文', r'英语', r'主译法', r'译文', r'翻译', r'translation', r'target'])
-        alt_col = _pick([r'补充形式', r'另一词性', r'variant', r'variants', r'alternate'])
+        en_col = _pick([r'英文', r'英语', r'主译法', r'名词译法', r'译文', r'翻译', r'translation', r'target'])
+        alt_col = _pick([r'补充形式', r'另一词性', r'动词译法', r'variant', r'variants', r'alternate'])
+        constraint_col = _pick([r'约束', r'constraint'])
 
         strip_tags = re.compile(r'\[/?color[^\]]*\]|\{[^}]+\}')
         split_variants = re.compile(r'[;,|/、]+')
@@ -140,6 +147,9 @@ def _load_term_base(path: str | None) -> dict[str, dict]:
                 src = strip_tags.sub('', str(row.get(cn_col, ''))).strip()
                 primary = strip_tags.sub('', str(row.get(en_col, ''))).strip()
                 alt_raw = str(row.get(alt_col, '')).strip() if alt_col else ''
+                constraint_raw = str(row.get(constraint_col, '')).strip() if constraint_col else ''
+                if constraint_raw.lower() == 'nan':
+                    constraint_raw = ''
                 variants = []
                 if alt_raw and alt_raw.lower() != 'nan':
                     variants = [
@@ -151,7 +161,7 @@ def _load_term_base(path: str | None) -> dict[str, dict]:
                 if not src:
                     continue
 
-                entry = lookup.setdefault(src, {'primary': '', 'variants': [], 'enforce_case': False})
+                entry = lookup.setdefault(src, {'primary': '', 'variants': [], 'enforce_case': False, 'constraint': ''})
                 if primary and not entry['primary']:
                     entry['primary'] = primary
                 for v in variants:
@@ -159,6 +169,8 @@ def _load_term_base(path: str | None) -> dict[str, dict]:
                         continue
                     if all(v.lower() != ex.lower() for ex in entry['variants']):
                         entry['variants'].append(v)
+                if constraint_raw and not entry.get('constraint'):
+                    entry['constraint'] = constraint_raw
 
             return _normalize_term_lookup(lookup)
 
@@ -265,6 +277,7 @@ def prepare_ai_review(
     term_lookup: dict | None = None,
     lang: str = 'en',
     scope: str = 'all',
+    include_term_priority: bool = False,
 ):
     """Prepare AI review batches from current states (after machine review)."""
     if scope == 'issues_only':
@@ -272,26 +285,27 @@ def prepare_ai_review(
     else:
         selected_states = list(states.values())
 
-    rows = [
-        {
+    rows = []
+    for s in selected_states:
+        item = {
             'id': s.row_id,
             'original': s.original,
             'translation': s.fixed_translation,
-            'is_ui': s.is_ui,
-            'term_status': (
+        }
+        if include_term_priority:
+            item['is_ui'] = s.is_ui
+            item['term_status'] = (
                 '术语有误' if any(
                     getattr(i, 'check_type', '') in {'term_missing', 'term_partial_hit', 'term_capitalization'}
                     for i in s.issues
                 ) else '命中术语无误'
-            ),
-            'term_issue_types': '; '.join(sorted(set(
+            )
+            item['term_issue_types'] = '; '.join(sorted(set(
                 getattr(i, 'check_type', '')
                 for i in s.issues
                 if getattr(i, 'check_type', '') in {'term_missing', 'term_partial_hit', 'term_capitalization'}
-            ))),
-        }
-        for s in selected_states
-    ]
+            )))
+        rows.append(item)
     return prepare_all_batches(rows, batch_size=batch_size, term_lookup=term_lookup, lang=lang)
 
 
@@ -361,16 +375,33 @@ def _build_term_only_view(
 
     term_error_types = {'term_missing', 'term_partial_hit', 'term_capitalization'}
 
+    # Prebuild term candidates (skip too-short CN terms to reduce noisy hits)
+    term_items: list[tuple[str, str]] = []
+    for cn_term, term_item in term_lookup.items():
+        cn = str(cn_term).strip()
+        if len(cn) < 2:
+            continue
+        primary = str(term_item.get('primary', '')) if isinstance(term_item, dict) else str(term_item)
+        variants = term_item.get('variants', []) if isinstance(term_item, dict) else []
+        all_tgt = [primary] + [str(v) for v in variants if str(v).strip()]
+        tgt_text = ' / '.join([x for x in all_tgt if x])
+        term_items.append((cn, tgt_text))
+
+    # Long terms first so short generic terms don't flood results
+    term_items.sort(key=lambda x: len(x[0]), reverse=True)
+
     rows = []
     for state in states.values():
         hits: list[tuple[str, str]] = []
         src = str(state.original)
-        for cn_term, term_item in term_lookup.items():
+        for cn_term, tgt_text in term_items:
             if cn_term and cn_term in src:
-                primary = str(term_item.get('primary', '')) if isinstance(term_item, dict) else str(term_item)
-                variants = term_item.get('variants', []) if isinstance(term_item, dict) else []
-                all_tgt = [primary] + [str(v) for v in variants if str(v).strip()]
-                hits.append((cn_term, ' / '.join([x for x in all_tgt if x])))
+                # If this shorter term is fully covered by an already selected longer term, skip it.
+                if any(cn_term in sel_cn for sel_cn, _ in hits):
+                    continue
+                hits.append((cn_term, tgt_text))
+                if len(hits) >= 8:
+                    break
         if not hits:
             continue
 
