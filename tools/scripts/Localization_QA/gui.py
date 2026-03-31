@@ -109,6 +109,17 @@ class App(tk.Tk):
                            bg=CARD, fg=ACCENT, relief="solid", bd=1, padx=14, pady=10)
         p1.grid(row=0, column=0, **pad)
 
+        tpl_row = tk.Frame(p1, bg=CARD)
+        tpl_row.pack(fill="x", pady=(0, 8))
+        tk.Label(tpl_row, text="下载模板:", font=FT, bg=CARD, fg=TXT,
+                 width=16, anchor="e").pack(side="left", padx=(0, 6))
+        tk.Button(tpl_row, text="语言表模板", font=FT_S, relief="solid", bd=1,
+                  cursor="hand2", padx=8,
+                  command=lambda: self._open_template("语言表模板.xlsx")).pack(side="left", padx=(0, 6))
+        tk.Button(tpl_row, text="术语表模板", font=FT_S, relief="solid", bd=1,
+                  cursor="hand2", padx=8,
+                  command=lambda: self._open_template("术语表模板.xlsx")).pack(side="left")
+
         self.file_lang = FileRow(p1, "语言表 Excel:")
         self.file_lang.pack(fill="x", pady=(0, 5))
         self.file_term = FileRow(p1, "术语库:", optional=True,
@@ -127,7 +138,7 @@ class App(tk.Tk):
         tk.Label(opts, text="AI批次:", font=FT, bg=CARD, fg=TXT).pack(side="left", padx=(16, 0))
         self.batch_var = tk.StringVar(value="500")
         ttk.Combobox(opts, textvariable=self.batch_var, width=6, state="readonly",
-                     values=["200", "500", "1000"]).pack(side="left", padx=(4, 0))
+                     values=["200", "500", "1000", "2000", "5000"]).pack(side="left", padx=(4, 0))
         tk.Label(opts, text="行/批", font=FT_S, bg=CARD, fg=TXT2).pack(side="left", padx=(2, 0))
 
         scope_row = tk.Frame(p1, bg=CARD)
@@ -251,6 +262,13 @@ class App(tk.Tk):
         self.log.configure(state="normal")
         self.log.delete("1.0", "end")
         self.log.configure(state="disabled")
+
+    def _open_template(self, filename: str):
+        tpl_path = PROJECT_ROOT / "templates" / filename
+        if not tpl_path.exists():
+            messagebox.showerror("错误", f"模板文件不存在：{tpl_path}")
+            return
+        os.startfile(str(tpl_path))
 
     # ── Phase 1: Machine Review ──
 

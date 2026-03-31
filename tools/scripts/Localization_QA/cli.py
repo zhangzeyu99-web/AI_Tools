@@ -329,8 +329,8 @@ def main():
     parser.add_argument('--output-dir', default='./output', help='输出目录（默认 ./output/）')
     parser.add_argument('--auto-fix', action='store_true', help='自动修复可修复项')
     parser.add_argument('--lang-index', type=int, default=0, help='多语言文件列索引')
-    parser.add_argument('--batch-size', type=int, default=500, choices=[200, 500, 1000],
-                        help='AI审查每批行数（默认 500）')
+    parser.add_argument('--batch-size', type=int, default=500,
+                        help='AI审查每批行数（默认 500，不设上限）')
     parser.add_argument('--skip-ai', action='store_true', help='跳过AI审查，仅运行机审')
     parser.add_argument('--agent', choices=['prepare', 'merge'], default=None,
                         help='Agent 非交互模式: prepare=机审+生成提示词, merge=合并AI结果')
